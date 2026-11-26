@@ -82,12 +82,43 @@
         }))));
       if (list.length > shown.length) out.appendChild(h('p.small.muted', { style: { marginTop: '8px' } }, 'แสดง 60 จาก ' + list.length + ' รายชื่อ พิมพ์ชื่อหรือเลือกห้องเพื่อให้แคบลง'));
     }
-    q.addEventListener('input', paint); room.addEventListener('change', paint);
+    const charts = h('div.stats-charts', loading('กำลังโหลดภาพรวมคำตอบ'));
+    const togglePaint = () => { paint(); charts.hidden = !!(q.value.trim() || room.value); };
+    q.addEventListener('input', togglePaint); room.addEventListener('change', togglePaint);
     clear(holder);
     append(holder,
       h('div.search-bar', h('div', h('label.field', { for: 'q' }, 'ชื่อ–สกุล หรือเลขที่'), q), h('div', h('label.field', { for: 'room' }, 'ห้อง'), room)),
-      out);
+      out, charts);
     paint(); q.focus();
+    loadStats(level, charts);
+  }
+
+  // ---------- กราฟภาพรวมใต้ช่องค้นหา (จำนวนรวม ไม่มีข้อมูลรายบุคคล) ----------
+  const SHORT = {
+    plan: ['SMTE', 'Gifted Sci', 'Gifted Math', 'EP', 'Prem Sci', 'Prem Math', 'Gold', 'Gold ภาษา', 'พลังสิบ', 'Health Sci', 'Engineer', 'Pol & Law', 'Linguistics', 'Programmer'],
+    arts: ['ศิลป์–ภาษา', 'ศิลป์–คำนวณ', 'ศิลป์–สังคม', 'ศิลป์–ศิลปกรรม', 'อื่น ๆ'],
+    faculty: ['แพทย์', 'ทันตะ', 'เภสัช', 'สัตวแพทย์', 'พยาบาล', 'สหเวช', 'สาธารณสุข', 'แพทย์แผนไทย', 'วิทย์กีฬา', 'วิศวะ', 'สถาปัตย์', 'วิทยาศาสตร์', 'คอม/IT', 'เกษตร', 'อุตฯ เกษตร', 'ทรัพยากรฯ', 'บริหาร', 'บัญชี/การเงิน', 'เศรษฐศาสตร์', 'นิติ', 'รัฐศาสตร์', 'สังคม/จิตวิทยา', 'ครุ/ศึกษา', 'อักษร/ภาษา', 'นิเทศ', 'ท่องเที่ยว/โรงแรม', 'ศิลปกรรม', 'ทหาร/ตำรวจ', 'อื่น ๆ'],
+  };
+  async function loadStats(level, box) {
+    let r;
+    try { r = await K.api.req('public_stats', { level }); } catch (e) { clear(box); return; }
+    clear(box);
+    const sv = S.byLevel[level];
+    const find = (id) => S.allQuestions(sv).find((q) => q.id === id);
+    const defs = level === 3
+      ? [['plan', 'q2_3', 'แผนการเรียน ม.4 ที่นักเรียน ม.3 สนใจมากที่สุด', 'นับจากอันดับ 1 ของข้อ 2.3 ผู้ตอบ'],
+        ['arts', 'q2_4_3', 'แผนสายศิลป์ที่นักเรียน ม.3 สนใจ', 'ข้อ 2.4.3 เลือกได้หลายข้อ จากนักเรียนที่สนใจสายศิลป์']]
+      : [['faculty', 'q2_2', 'คณะ / กลุ่มสาขาที่นักเรียน ม.6 สนใจมากที่สุด', 'นับจากอันดับ 1 ของข้อ 2.2 ผู้ตอบ']];
+    defs.forEach(([key, qid, title, note]) => {
+      const st = r.charts[key] || { counts: {}, n: 0 };
+      const opts = S.realOptions(find(qid).options);
+      const items = opts.map((o, i) => ({ label: (SHORT[key] || [])[i] || o.label, full: o.label, value: Number(st.counts[o.value] || 0) }));
+      const area = h('div');
+      box.appendChild(h('div.chart-card.stats-card', h('h2', { style: { fontSize: '1.05rem', margin: '0 0 2px' } }, title),
+        h('div.meta', note + ' ' + st.n.toLocaleString('th-TH') + ' คน  ชี้หรือแตะแท่งเพื่อดูชื่อเต็ม'), area));
+      if (!st.n) area.appendChild(h('p.muted.small', 'ยังไม่มีผู้ตอบข้อนี้'));
+      else K.pareto.render(area, { items, label: title, valueLabel: key === 'arts' ? 'ครั้งที่เลือก' : 'คน' });
+    });
   }
 
   // ---------- ยืนยันตัวตน ----------

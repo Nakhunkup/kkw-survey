@@ -131,6 +131,14 @@
       return { ok: true, student: { level: st.level, room: st.room, no: st.no, name: st.name }, submitted: !!resp, response: resp || null, open: getDb().open[st.level],
         cipp: { form: DEMO_ROOMS[st.level][st.room] || '', open: getDb().cippOpen[st.level], submitted: !!cr, response: cr || null } };
     },
+    public_stats: (r) => {
+      const lv = Number(r.level);
+      const ids = new Set(getDb().students.filter((s) => s.level === lv).map((s) => s.id));
+      const list = getDb().responses.filter((x) => ids.has(x.id));
+      const first = (k) => { const c = {}; let n = 0; list.forEach((x) => { const v = x.answers[k]; if (Array.isArray(v) && v[0]) { c[v[0]] = (c[v[0]] || 0) + 1; n++; } }); return { counts: c, n }; };
+      const multi = (k) => { const c = {}; let n = 0; list.forEach((x) => { const v = x.answers[k]; if (Array.isArray(v) && v.length) { n++; v.forEach((y) => { c[y] = (c[y] || 0) + 1; }); } }); return { counts: c, n }; };
+      return { ok: true, total: list.length, charts: lv === 3 ? { plan: first('q2_3'), arts: multi('q2_4_3') } : { faculty: first('q2_2') } };
+    },
     cipp_submit: (r) => {
       const st = checkStudent(r);
       if (!getDb().cippOpen[st.level]) return { ok: false, error: 'ขณะนี้ปิดรับแบบประเมินหลักสูตรของชั้น ม.' + st.level + ' แล้ว' };

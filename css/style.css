@@ -345,3 +345,20 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus, main:focus { box-shadow: none;
 .pass-y { color: var(--ok); font-weight: 700; }
 .pass-n { color: var(--danger); font-weight: 700; }
 .mode-switch { margin-bottom: 18px; }
+.stats-charts { margin-top: 22px; }
+.stats-card + .stats-card { margin-top: 16px; }
+.pareto-box { position: relative; }
+.pareto-box svg:focus-visible { box-shadow: var(--focus); border-radius: 4px; }
+.pareto-tip { position: absolute; transform: translate(12px, -50%); background: var(--ink); color: #fff; border-radius: var(--radius); padding: 8px 10px; font-size: .85rem; pointer-events: none; min-width: 150px; max-width: 240px; z-index: 5; }
+.pareto-tip.flip { transform: translate(calc(-100% - 12px), -50%); }
+.pareto-tip b { display: block; margin-bottom: 4px; }
+.pareto-tip div { display: flex; align-items: center; gap: 6px; }
+.pareto-tip div span { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; }
+.pareto-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.pareto .legend { margin: 8px 0 0; }
+.pareto-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pareto-hint { display: none; margin-top: 4px; }
+@media (max-width: 760px) {
+  .pareto-box { min-width: 620px; }
+  .pareto-hint { display: block; }
+}
