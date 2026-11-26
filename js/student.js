@@ -21,29 +21,30 @@
     const cards = h('div.levels');
     setView(
       h('div.home-head',
-        h('h1', 'แบบสำรวจความต้องการศึกษาต่อ ปีการศึกษา 2570'),
-        h('p.muted', 'สำหรับนักเรียนชั้นมัธยมศึกษาปีที่ 3 และ 6 โรงเรียนขอนแก่นวิทยายน เลือกระดับชั้นของนักเรียนเพื่อค้นหาชื่อและเริ่มตอบ')),
+        h('h1', 'แบบสอบถามสำหรับนักเรียน ปีการศึกษา 2569'),
+        h('p.muted', 'แบบสำรวจความต้องการศึกษาต่อ และแบบประเมินหลักสูตร (CIPP) สำหรับนักเรียนชั้น ม.3 และ ม.6 โรงเรียนขอนแก่นวิทยายน เลือกระดับชั้นเพื่อค้นหาชื่อและเริ่มตอบ')),
       cards,
       h('div.panel.steps-how',
         h('h2', 'ขั้นตอนการตอบ'),
         h('ol',
           h('li', 'เลือกระดับชั้น แล้วค้นหาชื่อ ห้อง หรือเลขที่ของตนเอง'),
           h('li', 'คลิกชื่อของตนเอง แล้วกรอกเลขประจำตัวนักเรียน 5 หลักเพื่อยืนยันตัวตน'),
-          h('li', 'อ่านและยินยอมการใช้ข้อมูลส่วนบุคคล แล้วตอบแบบสำรวจทีละตอนจนครบ'),
-          h('li', 'กดส่งได้ครั้งเดียว หลังส่งแล้วกลับมาดูคำตอบและผลบุคลิกภาพอาชีพของตนเองได้ทุกเมื่อ')),
+          h('li', 'เลือกแบบที่จะตอบ ได้แก่ แบบสำรวจความต้องการศึกษาต่อ หรือแบบประเมินหลักสูตรของแผนการเรียนตนเอง'),
+          h('li', 'อ่านและยินยอมการใช้ข้อมูลส่วนบุคคล แล้วตอบทีละตอนจนครบ'),
+          h('li', 'แต่ละแบบส่งได้ครั้งเดียว หลังส่งแล้วกลับมาดูคำตอบของตนเองได้ทุกเมื่อ')),
         K.demo ? h('p.small.muted', { style: { marginTop: '10px' } }, 'โหมดทดลอง: เลขประจำตัวสมมติ = ระดับชั้น + ห้อง 2 หลัก + เลขที่ 2 หลัก เช่น ม.3/2 เลขที่ 7 คือ 30207') : null));
     append(cards, [3, 6].map((lv) => levelCard(lv, null)));
     try {
       const c = await K.api.req('config');
       openState = c.open;
-      clear(cards); append(cards, [3, 6].map((lv) => levelCard(lv, c.open[lv])));
+      clear(cards); append(cards, [3, 6].map((lv) => levelCard(lv, c.open[lv] || (c.cippOpen || {})[lv])));
     } catch (e) { cards.after(errBox(e)); }
   }
   function levelCard(level, open) {
     const sv = S.byLevel[level];
     return h('button.level-card', { type: 'button', 'data-level': level, onclick: () => search(level) },
       h('div.lc-top', h('div.lc-grade', 'ม.' + level), open == null ? h('span.badge.wait', 'กำลังตรวจสอบ') : open ? h('span.badge.open', 'เปิดรับคำตอบ') : h('span.badge.closed', 'ปิดรับคำตอบ')),
-      h('div.lc-body', h('div.lc-title', sv.short), h('div.muted.small', sv.title)),
+      h('div.lc-body', h('div.lc-title', 'แบบสำรวจ' + sv.short), h('div.lc-title', 'แบบประเมินหลักสูตร ' + (level === 3 ? 'ม.ต้น' : 'ม.ปลาย'))),
       h('div.lc-foot', h('span', 'ค้นหาชื่อของฉัน'), h('span', { 'aria-hidden': 'true' }, '›')));
   }
 
