@@ -23,7 +23,13 @@
     });
     blocks.forEach((b) => wrap.appendChild(b.block));
     function refresh() {
-      blocks.forEach(({ q, block }) => { block.hidden = !S.isVisible(q, ctx.answers); });
+      blocks.forEach(({ q, block }) => {
+        block.hidden = !S.isVisible(q, ctx.answers);
+        if (block.classList.contains('has-error') && !validateQuestion(q, ctx.answers)) {
+          block.classList.remove('has-error');
+          const box = block.querySelector('.q-error'); box.hidden = true; box.textContent = '';
+        }
+      });
     }
     refresh();
     wrap._refresh = refresh;

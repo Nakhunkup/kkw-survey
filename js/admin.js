@@ -8,7 +8,7 @@
   const subbar = document.getElementById('subbar');
   const TOKEN = 'kkw_admin_token';
 
-  const st = { token: null, data: null, respById: new Map(), level: 3, room: '', tab: 'overview', listStatus: '', listQuery: '' };
+  const st = { token: null, data: null, respById: new Map(), level: 3, room: '', tab: 'overview', listStatus: '', listQuery: '', mode: 'survey', cippById: new Map() };
   const tok = {
     get() { try { return sessionStorage.getItem(TOKEN); } catch (e) { return st.token; } },
     set(v) { st.token = v; try { v ? sessionStorage.setItem(TOKEN, v) : sessionStorage.removeItem(TOKEN); } catch (e) { /* ใช้ในหน่วยความจำ */ } },
@@ -56,6 +56,8 @@
     const d = await call('admin_data');
     st.data = d;
     st.respById = new Map(d.responses.map((r) => [String(r.id), r]));
+    d.cippResponses = d.cippResponses || []; d.cippOpen = d.cippOpen || { 3: false, 6: false }; d.roomMap = d.roomMap || K.cipp.D.rooms;
+    st.cippById = new Map(d.cippResponses.map((r) => [String(r.id), r]));
   }
 
   // ---------- โครงหน้าหลัก ----------
@@ -74,6 +76,7 @@
   }
 
   const scopeStudents = () => st.data.students.filter((s) => (st.level === 'all' || s.level === st.level) && (!st.room || s.room === Number(st.room)));
+  const cippApi = () => ({ st, call, later, scopeStudents, scopeLabel, rerender: render });
   const scopeLabel = () => (st.level === 'all' ? 'ทุกระดับชั้น' : 'ม.' + st.level + (st.room ? '/' + st.room : ' ทุกห้อง'));
 
   function render() {
@@ -84,18 +87,23 @@
       h('button', { type: 'button', 'aria-pressed': st.level === v ? 'true' : 'false', onclick: () => { st.level = v; st.room = ''; render(); } }, l)));
     const roomSel = h('select.input#roomSel', { style: { minWidth: '160px' }, disabled: st.level === 'all', onchange: (e) => { st.room = e.target.value; render(); } },
       h('option', { value: '' }, st.level === 'all' ? 'ทุกห้อง' : 'ทุกห้อง (ภาพรวมระดับชั้น)'), rooms.map((r) => h('option', { value: r, selected: String(r) === String(st.room) }, 'ม.' + st.level + '/' + r)));
+    const cipp = st.mode === 'cipp';
     const tabs = [['overview', 'ภาพรวมการส่ง'], ['analysis', 'วิเคราะห์ผล'], ['riasec', 'RIASEC'], ['list', 'รายชื่อและคำตอบ']];
-    const tabBar = h('div.tabs', { role: 'tablist' }, tabs.map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': st.tab === k ? 'true' : 'false', onclick: () => { st.tab = k; render(); } }, l)));
+    const tabBar = cipp ? null : h('div.tabs', { role: 'tablist' }, tabs.map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': st.tab === k ? 'true' : 'false', onclick: () => { st.tab = k; render(); } }, l)));
     const body = h('div');
+    const modeSeg = h('div.seg.mode-switch', { role: 'group', 'aria-label': 'แบบสอบถาม' }, [['survey', 'แบบสำรวจความต้องการศึกษาต่อ'], ['cipp', 'แบบประเมินหลักสูตร (CIPP)']].map(([v, l]) =>
+      h('button', { type: 'button', 'aria-pressed': st.mode === v ? 'true' : 'false', onclick: () => { st.mode = v; render(); } }, l)));
     clear(view);
     append(view,
+      modeSeg,
       h('div.toolbar',
         h('div.fieldset', h('span', 'ระดับชั้น'), seg),
         h('div.fieldset', h('label', { for: 'roomSel', style: { fontSize: '.85rem', color: 'var(--muted)', fontWeight: 600 } }, 'ห้อง'), roomSel),
         h('div', { style: { flex: 1 } }),
-        h('button.btn', { type: 'button', onclick: () => { K.exporter.exportAll(scopeStudents(), st.respById, scopeLabel()); toast('กำลังดาวน์โหลดไฟล์ Excel'); } }, 'ดาวน์โหลด Excel (' + scopeLabel() + ')')),
+        h('button.btn', { type: 'button', onclick: () => { if (cipp) K.cippAdmin.exportAll(cippApi()); else { K.exporter.exportAll(scopeStudents(), st.respById, scopeLabel()); toast('กำลังดาวน์โหลดไฟล์ Excel'); } } }, 'ดาวน์โหลด Excel (' + scopeLabel() + ')')),
       tabBar, body);
-    ({ overview, analysis, riasec, list })[st.tab](body);
+    if (cipp) K.cippAdmin.render(body, cippApi());
+    else ({ overview, analysis, riasec, list })[st.tab](body);
     flush();
   }
 

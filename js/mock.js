@@ -1,7 +1,8 @@
 /* หลังบ้านจำลองสำหรับโหมดทดลอง — ใช้รายชื่อสมมติเท่านั้น ไม่มีข้อมูลนักเรียนจริง */
 (function () {
   const K = (window.KKW = window.KKW || {});
-  const STORE = 'kkw_demo_v1';
+  const STORE = 'kkw_demo_v2';
+  const DEMO_ROOMS = { 3: { 1: 'L_SMTE', 2: 'L_GIFTED', 3: 'L_GOLD', 4: 'L_EP' }, 6: { 1: 'U_SMTE', 2: 'U_PSCI', 3: 'U_GMATH', 4: 'U_PMATH' } };
   const DEMO_USER = 'demo', DEMO_PASS = 'demo';
 
   let seed = 20570;
@@ -91,7 +92,21 @@
         responses.push({ id: s.id, ts: d.toISOString(), answers: randomAnswers(K.schema.byLevel[s.level], s.male) });
       }
     });
-    return { students: students.map(({ male, ...s }) => s), responses, open: { 3: true, 6: true } };
+    const cippResponses = [];
+    students.forEach((s) => {
+      const form = DEMO_ROOMS[s.level][s.room];
+      if (form && rnd() < 0.6) {
+        const n = K.cipp.orderedItems(form).length;
+        const base = randInt(3, 4);
+        const a = { c_gender: s.male ? 1 : 2, c_items: Array.from({ length: n }, () => Math.max(1, Math.min(5, base + randInt(-1, 1)))) };
+        if (s.level === 6) a.c_from = rnd() < 0.7 ? 1 : 2;
+        if (a.c_from === 1) a.c_from_room = 'ม.3/' + randInt(1, 20);
+        if (rnd() < 0.4) a.c_open1 = pick(['ได้ลงมือทำจริง', 'ครูใส่ใจ', 'กิจกรรมหลากหลาย']);
+        if (rnd() < 0.4) a.c_open2 = pick(['เวลาเรียนแน่น', 'อุปกรณ์ไม่พอ', 'การบ้านเยอะ']);
+        cippResponses.push({ id: s.id, ts: new Date(Date.now() - randInt(1, 48) * 3600e3).toISOString(), form, answers: a });
+      }
+    });
+    return { students: students.map(({ male, ...s }) => s), responses, open: { 3: true, 6: true }, cippResponses, cippOpen: { 3: true, 6: true } };
   }
   let db = null;
   const getDb = () => (db = db || load());
@@ -107,13 +122,25 @@
   const admin = (r) => { if (!token || r.token !== token) throw new Error('SESSION_EXPIRED'); };
 
   const actions = {
-    config: () => ({ ok: true, open: getDb().open }),
+    config: () => ({ ok: true, open: getDb().open, cippOpen: getDb().cippOpen }),
     roster: (r) => ({ ok: true, students: getDb().students.filter((s) => s.level === Number(r.level)).map((s) => ({ room: s.room, no: s.no, name: s.name })) }),
     verify: (r) => {
       const st = checkStudent(r);
       const resp = getDb().responses.find((x) => x.id === st.id);
-      return { ok: true, student: { level: st.level, room: st.room, no: st.no, name: st.name }, submitted: !!resp, response: resp || null, open: getDb().open[st.level] };
+      const cr = getDb().cippResponses.find((x) => x.id === st.id);
+      return { ok: true, student: { level: st.level, room: st.room, no: st.no, name: st.name }, submitted: !!resp, response: resp || null, open: getDb().open[st.level],
+        cipp: { form: DEMO_ROOMS[st.level][st.room] || '', open: getDb().cippOpen[st.level], submitted: !!cr, response: cr || null } };
     },
+    cipp_submit: (r) => {
+      const st = checkStudent(r);
+      if (!getDb().cippOpen[st.level]) return { ok: false, error: 'ขณะนี้ปิดรับแบบประเมินหลักสูตรของชั้น ม.' + st.level + ' แล้ว' };
+      if (getDb().cippResponses.find((x) => x.id === st.id)) return { ok: false, error: 'นักเรียนส่งแบบประเมินหลักสูตรไปแล้ว หากต้องการแก้ไขกรุณาติดต่อครู' };
+      const ts = new Date().toISOString(); const form = DEMO_ROOMS[st.level][st.room];
+      getDb().cippResponses.push({ id: st.id, ts, form, answers: r.answers }); save();
+      return { ok: true, ts, form };
+    },
+    cipp_set_open: (r) => { admin(r); getDb().cippOpen[Number(r.level)] = !!r.open; save(); return { ok: true, cippOpen: getDb().cippOpen }; },
+    cipp_delete: (r) => { admin(r); const d = getDb(); const b = d.cippResponses.length; d.cippResponses = d.cippResponses.filter((x) => x.id !== String(r.id)); save(); return { ok: true, removed: b - d.cippResponses.length }; },
     submit: (r) => {
       const st = checkStudent(r);
       if (!getDb().open[st.level]) return { ok: false, error: 'ขณะนี้ปิดรับคำตอบของชั้น ม.' + st.level + ' แล้ว' };
@@ -128,7 +155,7 @@
       token = 'demo-' + Date.now();
       return { ok: true, token };
     },
-    admin_data: (r) => { admin(r); const d = getDb(); return { ok: true, students: d.students, responses: d.responses, open: d.open }; },
+    admin_data: (r) => { admin(r); const d = getDb(); return { ok: true, students: d.students, responses: d.responses, open: d.open, cippResponses: d.cippResponses, cippOpen: d.cippOpen, roomMap: DEMO_ROOMS }; },
     set_open: (r) => { admin(r); getDb().open[Number(r.level)] = !!r.open; save(); return { ok: true, open: getDb().open }; },
     delete_response: (r) => { admin(r); const d = getDb(); const before = d.responses.length; d.responses = d.responses.filter((x) => x.id !== String(r.id)); save(); return { ok: true, removed: before - d.responses.length }; },
   };

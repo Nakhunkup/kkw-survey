@@ -339,3 +339,9 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus, main:focus { box-shadow: none;
   .subbar-inner { justify-content: flex-end; }
 }
 @media (max-width: 380px) { .masthead .system { display: none; } }
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.hub-grid .panel + .panel { margin-top: 0; }
+.diamond { color: #b7860b; }
+.pass-y { color: var(--ok); font-weight: 700; }
+.pass-n { color: var(--danger); font-weight: 700; }
+.mode-switch { margin-bottom: 18px; }

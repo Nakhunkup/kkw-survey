@@ -14,7 +14,7 @@
     set(v) { try { sessionStorage.setItem(SESSION, JSON.stringify(v)); } catch (e) { /* ไม่มีที่เก็บ */ } },
     clear() { try { sessionStorage.removeItem(SESSION); } catch (e) { /* ไม่มีที่เก็บ */ } },
   };
-  const draftKey = (s) => 'kkw_draft_' + s.level + '_' + s.room + '_' + s.no;
+  const draftKey = (s, kind) => 'kkw_draft_' + (kind === 'cipp' ? 'cipp_' : '') + s.level + '_' + s.room + '_' + s.no;
 
   // ---------- หน้าแรก ----------
   async function home() {
@@ -106,9 +106,7 @@
           const st = Object.assign({}, r.student, { sid });
           session.set(st);
           m.close();
-          if (r.submitted) done(st, r.response);
-          else if (!r.open) closedView(st);
-          else consent(st);
+          hub(st, r);
         } catch (err) {
           clear(msg).appendChild(h('div.alert.error', err.message)); ok.disabled = false; ok.textContent = 'ยืนยัน'; input.select();
         }
@@ -123,6 +121,35 @@
     append(m.foot, h('button.btn.secondary', { type: 'button', onclick: () => m.close() }, 'ยกเลิก'), ok);
   }
 
+  // ---------- หน้ารวมแบบสอบถามของนักเรียน ----------
+  function hub(st, r) {
+    const c = r.cipp || {};
+    const sv = S.byLevel[st.level];
+    const cf = c.form ? K.cipp.form(c.form) : null;
+    const badge = (sent, open) => sent ? h('span.badge.ok', 'ส่งแล้ว') : open ? h('span.badge.open', 'เปิดรับคำตอบ') : h('span.badge.closed', 'ปิดรับคำตอบ');
+    function card(title, sub, sent, open, onView, onStart, missing) {
+      let action;
+      if (missing) action = h('span.small.muted', missing);
+      else if (sent) action = h('button.btn.secondary', { type: 'button', onclick: onView }, 'ดูคำตอบของฉัน');
+      else if (open) action = h('button.btn', { type: 'button', onclick: onStart }, 'เริ่มตอบ');
+      else action = h('span.small.muted', 'ยังไม่เปิดรับคำตอบ รอครูแจ้งแล้วกลับมาตอบอีกครั้ง');
+      return h('div.panel.hub-card', h('div.row', h('h2.grow', { style: { margin: 0, fontSize: '1.15rem' } }, title), missing ? null : badge(sent, open)), h('p.muted', { style: { margin: '6px 0 14px' } }, sub), action);
+    }
+    setView(
+      h('div.who', h('span.muted', 'ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no), h('b', st.name)),
+      h('h1', { style: { fontSize: '1.4rem', margin: '18px 0 6px' } }, 'แบบสอบถามของฉัน'),
+      h('p.muted', 'ตอบแต่ละแบบได้ครั้งเดียว จะตอบแบบไหนก่อนก็ได้'),
+      h('div.hub-grid',
+        card('แบบสำรวจความต้องการศึกษาต่อ', sv.short, r.submitted, r.open, () => done(st, r.response), () => consent(st, 'survey')),
+        card('แบบประเมินหลักสูตร', cf ? cf.plan + ' (ฉบับที่ ' + cf.code + ')' : 'แบบประเมินหลักสูตรตาม CIPP Model', c.submitted, c.open,
+          () => cippDone(st, c.response), () => consent(st, 'cipp', c.form), cf ? null : 'ยังไม่ได้กำหนดแผนการเรียนของห้องนี้ กรุณาแจ้งครู')),
+      h('div.nav-row', h('button.btn.secondary', { type: 'button', onclick: () => { session.clear(); home(); } }, 'ออกจากระบบ')));
+  }
+  async function backToHub(st) {
+    setView(loading());
+    try { hub(st, await K.api.req('verify', { level: st.level, room: st.room, no: st.no, sid: st.sid })); } catch (e) { session.clear(); home(); }
+  }
+
   function closedView(st) {
     setView(h('div.panel',
       h('h1', { style: { fontSize: '1.4rem' } }, 'ขณะนี้ปิดรับคำตอบของชั้น ม.' + st.level),
@@ -132,10 +159,11 @@
   }
 
   // ---------- ความยินยอม PDPA ----------
-  function consent(st) {
-    const sv = S.byLevel[st.level];
+  function consent(st, kind, formKey) {
+    const cipp = kind === 'cipp';
+    const sv = cipp ? K.cipp.survey(formKey) : S.byLevel[st.level];
     const chk = h('input#agree', { type: 'checkbox', style: { width: '20px', height: '20px', accentColor: 'var(--navy)' } });
-    const go = h('button.btn', { type: 'button', disabled: true, onclick: () => survey(st) }, 'ยินยอมและเริ่มตอบ');
+    const go = h('button.btn', { type: 'button', disabled: true, onclick: () => survey(st, kind, formKey) }, 'ยินยอมและเริ่มตอบ');
     chk.addEventListener('change', () => (go.disabled = !chk.checked));
     setView(h('div.panel',
       h('div.who', h('span.muted', 'ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no), h('b', st.name)),
@@ -143,23 +171,25 @@
       h('div.consent', { tabindex: 0 },
         h('p', 'โรงเรียนขอนแก่นวิทยายนขอเก็บข้อมูลจาก' + sv.title + ' ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 ดังนี้'),
         h('h3', 'ข้อมูลที่เก็บ'),
-        h('ul', h('li', 'ชื่อ–สกุล ระดับชั้น ห้อง เลขที่ และเลขประจำตัวนักเรียน'), h('li', 'คำตอบในแบบสำรวจ เช่น เพศ ช่วงเกรดเฉลี่ย แผนการเรียนหรือคณะที่สนใจ ความสนใจด้านอาชีพ และข้อเสนอแนะ')),
+        h('ul', h('li', 'ชื่อ–สกุล ระดับชั้น ห้อง เลขที่ และเลขประจำตัวนักเรียน'), cipp ? h('li', 'คำตอบในแบบประเมิน ได้แก่ เพศ ความคิดเห็นต่อหลักสูตรที่เรียน และข้อเสนอแนะ') : h('li', 'คำตอบในแบบสำรวจ เช่น เพศ ช่วงเกรดเฉลี่ย แผนการเรียนหรือคณะที่สนใจ ความสนใจด้านอาชีพ และข้อเสนอแนะ')),
         h('h3', 'วัตถุประสงค์'),
-        h('ul', h('li', 'วางแผนเปิดห้องเรียนและแผนการเรียนของโรงเรียน'), h('li', 'ให้คำปรึกษาและแนะแนวการศึกษาต่อแก่นักเรียนเป็นรายบุคคล'), h('li', 'วิเคราะห์ผลในภาพรวมระดับห้องและระดับชั้น')),
+        cipp ? h('ul', h('li', 'ประเมินหลักสูตรของแผนการเรียน (บริบท ปัจจัยนำเข้า กระบวนการ ผลผลิต) เพื่อปรับปรุงหลักสูตร'), h('li', 'วิเคราะห์ผลในภาพรวมระดับห้อง แผนการเรียน และระดับชั้น'), h('li', 'คำตอบใช้ประเมินหลักสูตร ไม่ใช่ประเมินตัวนักเรียน และไม่มีผลต่อคะแนน')) : h('ul', h('li', 'วางแผนเปิดห้องเรียนและแผนการเรียนของโรงเรียน'), h('li', 'ให้คำปรึกษาและแนะแนวการศึกษาต่อแก่นักเรียนเป็นรายบุคคล'), h('li', 'วิเคราะห์ผลในภาพรวมระดับห้องและระดับชั้น')),
         h('h3', 'ผู้เข้าถึงข้อมูลและการเก็บรักษา'),
         h('ul', h('li', 'ข้อมูลเก็บในระบบของโรงเรียน เข้าถึงได้เฉพาะครูผู้รับผิดชอบและผู้บริหารโรงเรียน'), h('li', 'จะไม่เปิดเผยข้อมูลรายบุคคลต่อบุคคลภายนอก และจะเก็บไว้เท่าที่จำเป็นต่อวัตถุประสงค์ข้างต้น')),
         h('h3', 'สิทธิของนักเรียน'),
         h('p', 'นักเรียนและผู้ปกครองมีสิทธิขอดู ขอแก้ไข หรือขอลบข้อมูลของตนเองได้ โดยติดต่อครูที่ปรึกษาหรือครูแนะแนว การไม่ยินยอมไม่มีผลต่อผลการเรียนของนักเรียน')),
       h('label.choice', { style: { marginTop: '16px' }, for: 'agree' }, chk, h('span', 'ข้าพเจ้าได้อ่านและเข้าใจข้อความข้างต้น และยินยอมให้โรงเรียนเก็บและใช้ข้อมูลตามวัตถุประสงค์ที่ระบุ')),
-      h('div.nav-row', h('button.btn.secondary', { type: 'button', onclick: () => { session.clear(); home(); } }, 'ไม่ยินยอม กลับหน้าแรก'), go)));
+      h('div.nav-row', h('button.btn.secondary', { type: 'button', onclick: () => backToHub(st) }, 'ไม่ยินยอม กลับหน้ารวม'), go)));
   }
 
   // ---------- ตอบแบบสำรวจ ----------
-  function survey(st) {
-    const sv = S.byLevel[st.level];
+  function survey(st, kind, formKey) {
+    const cipp = kind === 'cipp';
+    const sv = cipp ? K.cipp.survey(formKey) : S.byLevel[st.level];
+    const noun = cipp ? 'แบบประเมิน' : 'แบบสำรวจ';
     let answers = {};
-    try { answers = JSON.parse(sessionStorage.getItem(draftKey(st))) || {}; } catch (e) { answers = {}; }
-    const saveDraft = () => { try { sessionStorage.setItem(draftKey(st), JSON.stringify(answers)); } catch (e) { /* ไม่มีที่เก็บ */ } };
+    try { answers = JSON.parse(sessionStorage.getItem(draftKey(st, kind))) || {}; } catch (e) { answers = {}; }
+    const saveDraft = () => { try { sessionStorage.setItem(draftKey(st, kind), JSON.stringify(answers)); } catch (e) { /* ไม่มีที่เก็บ */ } };
     let idx = 0;
     const secVisible = (i) => !sv.sections[i].showIf || sv.sections[i].showIf(answers);
     const stepper = h('ol.stepper', { 'aria-label': 'ความคืบหน้า' });
@@ -184,7 +214,7 @@
       append(holder, h('div.section-title', h('span.part', 'ตอนที่ ' + (i + 1)), h('h2', { tabindex: -1 }, sec.title)), current);
       prevBtn.hidden = i === 0;
       const last = nextIndex(i) === -1;
-      nextBtn.textContent = last ? 'ตรวจทานและส่งแบบสำรวจ' : 'ตอนถัดไป ›';
+      nextBtn.textContent = last ? 'ตรวจทานและส่ง' + noun : 'ตอนถัดไป ›';
       paintStepper();
       window.scrollTo(0, 0);
       holder.querySelector('h2').focus({ preventScroll: true });
@@ -203,16 +233,17 @@
         const bad = sv.sections[i].questions.find((q) => S.isVisible({ ...q, sectionShowIf: sv.sections[i].showIf }, answers) && K.render.validateQuestion(q, answers));
         if (bad) { show(i); setTimeout(() => K.render.validateSection(sv.sections[i], current, answers), 50); toast('ตอนที่ ' + (i + 1) + ' ยังตอบไม่ครบ'); return; }
       }
-      const yes = await confirmDialog('ยืนยันการส่งแบบสำรวจ', h('div', h('p', 'เมื่อส่งแล้วจะแก้ไขคำตอบเองไม่ได้ หากต้องการแก้ไขภายหลังต้องติดต่อครูให้ลบคำตอบเดิมก่อน'), h('p.muted', st.name + '  ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no)), 'ส่งแบบสำรวจ');
+      const yes = await confirmDialog('ยืนยันการส่ง' + noun, h('div', h('p', 'เมื่อส่งแล้วจะแก้ไขคำตอบเองไม่ได้ หากต้องการแก้ไขภายหลังต้องติดต่อครูให้ลบคำตอบเดิมก่อน'), h('p.muted', st.name + '  ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no)), 'ส่ง' + noun);
       if (!yes) return;
       nextBtn.disabled = true; nextBtn.textContent = 'กำลังส่ง';
       const clean = K.render.cleanAnswers(sv, answers);
       try {
-        const r = await K.api.req('submit', { level: st.level, room: st.room, no: st.no, sid: st.sid, answers: clean });
-        try { sessionStorage.removeItem(draftKey(st)); } catch (e) { /* ไม่มีที่เก็บ */ }
-        done(st, { ts: r.ts, answers: clean }, true);
+        const r = await K.api.req(cipp ? 'cipp_submit' : 'submit', { level: st.level, room: st.room, no: st.no, sid: st.sid, answers: clean });
+        try { sessionStorage.removeItem(draftKey(st, kind)); } catch (e) { /* ไม่มีที่เก็บ */ }
+        if (cipp) cippDone(st, { ts: r.ts, form: r.form || formKey, answers: clean }, true);
+        else done(st, { ts: r.ts, answers: clean }, true);
       } catch (e) {
-        nextBtn.disabled = false; nextBtn.textContent = 'ตรวจทานและส่งแบบสำรวจ';
+        nextBtn.disabled = false; nextBtn.textContent = 'ตรวจทานและส่ง' + noun;
         toast(e.message);
         holder.prepend(errBox(e));
       }
@@ -222,6 +253,7 @@
       h('div.survey-head', h('p.doc-title', sv.title), h('div.doc-sub', sv.subtitle)),
       h('div.who', h('span.muted', 'ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no), h('b', st.name)),
       idxIntro(sv),
+      h('div.row', { style: { marginBottom: '10px' } }, h('button.btn.secondary.small', { type: 'button', onclick: () => backToHub(st) }, '‹ กลับหน้ารวม')),
       stepper,
       h('div.panel', holder, h('div.nav-row', prevBtn, nextBtn)));
     show(0);
@@ -251,9 +283,21 @@
       h('div.row', { style: { marginBottom: '16px' } },
         h('div.grow', h('div.who', { style: { margin: 0 } }, h('span.muted', 'ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no + '  ส่งเมื่อ ' + fmtDate(response.ts)), h('b', st.name))),
         h('button.btn.secondary.no-print', { type: 'button', onclick: () => window.print() }, 'พิมพ์ / บันทึก PDF'),
-        h('button.btn.secondary.no-print', { type: 'button', onclick: () => { session.clear(); home(); } }, 'ออกจากระบบ')),
+        h('button.btn.secondary.no-print', { type: 'button', onclick: () => backToHub(st) }, 'กลับหน้ารวม')),
       tabBar, panel);
     open('riasec');
+  }
+
+  function cippDone(st, response, justSent) {
+    const sv = K.cipp.survey(response.form);
+    setView(
+      justSent ? h('div.alert.success', { role: 'status', style: { marginBottom: '16px' } }, 'ส่งแบบประเมินหลักสูตรเรียบร้อยแล้ว ขอบคุณที่ให้ความร่วมมือ') : null,
+      h('div.row', { style: { marginBottom: '16px' } },
+        h('div.grow', h('div.who', { style: { margin: 0 } }, h('span.muted', 'ม.' + st.level + '/' + st.room + ' เลขที่ ' + st.no + '  ส่งเมื่อ ' + fmtDate(response.ts)), h('b', st.name))),
+        h('button.btn.secondary.no-print', { type: 'button', onclick: () => window.print() }, 'พิมพ์ / บันทึก PDF'),
+        h('button.btn.secondary.no-print', { type: 'button', onclick: () => backToHub(st) }, 'กลับหน้ารวม')),
+      h('div.panel', h('h2', 'คำตอบแบบประเมินหลักสูตรที่ส่งแล้ว'), h('p.muted.small', sv ? sv.title + ' ฉบับที่ ' + K.cipp.form(response.form).code + ' (อ่านอย่างเดียว)' : ''),
+        sv ? K.render.renderAnswers(sv, response.answers || {}, st) : h('p', 'ไม่พบฉบับแบบประเมิน')));
   }
 
   K.ui.chrome({});
@@ -264,7 +308,7 @@
     setView(loading());
     try {
       const r = await K.api.req('verify', { level: st.level, room: st.room, no: st.no, sid: st.sid });
-      if (r.submitted) done(st, r.response); else if (!r.open) closedView(st); else consent(st);
+      hub(st, r);
     } catch (e) { session.clear(); home(); }
   })();
 })();
